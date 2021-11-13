@@ -1,106 +1,132 @@
-/*
-  Example for receiving
-  
-  https://github.com/sui77/rc-switch/
-  
-  If you want to visualize a telegram copy the raw data and 
-  paste it into http://test.sui.li/oszi/
-*/
-
+// Import required libraries
 #include <RCSwitch.h>           // Include library for communicating with 433Mhz
-#include <ESP8266WiFi.h>        // Include the Wi-Fi library
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <FS.h>
+
 int ledPin = 2; // 
 
 RCSwitch mySwitch_rx = RCSwitch(); // create two my switch classes one for receiving and one for transmitting
 RCSwitch mySwitch_tx = RCSwitch();
 
+
+// Replace with your network credentials
 const char* ssid     = "The LAN down under";         // The SSID (name) of the Wi-Fi network you want to connect to
 const char* password = "77788160";     // The password of the Wi-Fi network
-String transmit = "000000000000"; // Initial binary "string" to transmit on 433Mhz
-const char* style = "<style>\
-table, td, th {\
-  border: 1px solid black;\
-}\
-\
-table {\
-  border-collapse: collapse;\
-  width: 100%;\
-  height: 50%;\
-}\
-\
-th {\
-  height: 10%;\
-  width: 10%;\
-}\
-td {\
-  height: 10%;\
-  width: 20%;\
-  padding: 0px 0px;\
-}\
-.button {\
-  background-color: #4CAF50;\
-  border: none;\
-  color: white;\
-  padding: 15px 32px;\
-  text-align: center;\
-  text-decoration: none;\
-  display: inline-block;\
-  font-size: 24px;\
-  margin: 4px 2px;\
-  cursor: pointer;\
-  width: 100%;\
-  height: 100%;\
-}</style>"
-;
-const char* table = " <table>\
-  <tr>\
-    <th>Living</th>\
-	<th>B1</th>\
-    <th>B2</th>\
-    <th>B3</th>\
-	<th>B4</th>\
-  </tr>\
-  <tr>	\
-	<td> <a href=\"/RADIO=101111110011\"\"><button class=\"button\">Light </button></a>  </td>\
-	<td> <a href=\"/RADIO=101111111100\"\"><button class=\"button\">Light </button></a>  </td>\
-	<td> <a href=\"/RADIO=101111111011\"\"><button class=\"button\">Light </button></a>  </td>\
-	<td> <a href=\"/RADIO=101111111000\"\"><button class=\"button\">Light </button></a>  </td>\
-	<td> <a href=\"/RADIO=101111111110\"\"><button class=\"button\">Light </button></a>  </td>\
-  </tr>\
-  <tr>	\
-	<td> <a href=\"/RADIO=111110110011\"\"><button class=\"button\">Fan off </button></a>  </td>\
-	<td> <a href=\"/RADIO=111110111100\"\"><button class=\"button\">Fan off </button></a>  </td>\
-	<td> <a href=\"/RADIO=111110111011\"\"><button class=\"button\">Fan off </button></a>  </td>\
-	<td> <a href=\"/RADIO=111110111000\"\"><button class=\"button\">Fan off </button></a>  </td>\
-	<td> <a href=\"/RADIO=111110111110\"\"><button class=\"button\">Fan off </button></a>  </td>\
-  </tr>\
-  <tr>	\
-	<td> <a href=\"/RADIO=011111110011\"\"><button class=\"button\">Fan low </button></a>  </td>\
-	<td> <a href=\"/RADIO=011111111100\"\"><button class=\"button\">Fan low </button></a>  </td>\
-	<td> <a href=\"/RADIO=011111111011\"\"><button class=\"button\">Fan low </button></a>  </td>\
-	<td> <a href=\"/RADIO=011111111000\"\"><button class=\"button\">Fan low </button></a>  </td>\
-	<td> <a href=\"/RADIO=011111111110\"\"><button class=\"button\">Fan low </button></a>  </td>\
-  </tr>\
-  <tr>	\
-	<td> <a href=\"/RADIO=111011110011\"\"><button class=\"button\">Fan med </button></a>  </td>\
-	<td> <a href=\"/RADIO=111011111100\"\"><button class=\"button\">Fan med </button></a>  </td>\
-	<td> <a href=\"/RADIO=111011111011\"\"><button class=\"button\">Fan med </button></a>  </td>\
-	<td> <a href=\"/RADIO=111011111000\"\"><button class=\"button\">Fan med </button></a>  </td>\
-	<td> <a href=\"/RADIO=111011111110\"\"><button class=\"button\">Fan med </button></a>  </td>\
-  </tr>\
-  <tr>	\
-	<td> <a href=\"/RADIO=111101110011\"\"><button class=\"button\">Fan high </button></a>  </td>\
-	<td> <a href=\"/RADIO=111101111100\"\"><button class=\"button\">Fan high </button></a>  </td>\
-	<td> <a href=\"/RADIO=111101111011\"\"><button class=\"button\">Fan high </button></a>  </td>\
-	<td> <a href=\"/RADIO=111101111000\"\"><button class=\"button\">Fan high </button></a>  </td>\
-	<td> <a href=\"/RADIO=111101111110\"\"><button class=\"button\">Fan high </button></a>  </td>\
-  </tr>  \
-</table> ";
-int value = LOW; // store value of LED
 
-WiFiServer server(80);
 
-void setup() {
+const char* PARAM_INPUT_1 = "output";
+const char* PARAM_INPUT_2 = "state";
+
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <title>ESP Web Server</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <style>
+    html {font-family: Arial; display: inline-block; text-align: center;}
+    h2 {font-size: 3.0rem;}
+    p {font-size: 3.0rem;}
+    table, td, th {  border: 1px solid black;}
+    table {  border-collapse: collapse;  width: 100%;  height: 50%;}
+    th {  height: 10%;  width: 10%;}
+    td {  height: 10%;  width: 20%;  padding: 0px 0px;}
+    .button {  background-color: #4CAF50;  border: none;  color: white;
+    padding: 15px 32px;  text-align: center;  text-decoration: none;  display: inline-block;
+    font-size: 24px;  margin: 4px 2px;  cursor: pointer;  width: 100%;  height: 100%;
+    }
+    body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
+    .switch {position: relative; display: inline-block; width: 120px; height: 68px} 
+    .switch input {display: none}
+    .slider {position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 6px}
+    .slider:before {position: absolute; content: ""; height: 52px; width: 52px; left: 8px; bottom: 8px; background-color: #fff; -webkit-transition: .4s; transition: .4s; border-radius: 3px}
+    input:checked+.slider {background-color: #b30000}
+    input:checked+.slider:before {-webkit-transform: translateX(52px); -ms-transform: translateX(52px); transform: translateX(52px)}
+  </style>
+</head>
+<body>
+  <h2>ESP Web Server</h2>
+  <button  onclick="clickButton(this)" class="button" data-medium="LED" data-value="=0">LED On </button>
+  <button  onclick="clickButton(this)" class="button" data-medium="LED" data-value="=1">LED Off </button>
+  %BUTTONPLACEHOLDER%
+<script>function toggleCheckbox(element) {
+  var xhr = new XMLHttpRequest();
+  if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=1", true); }
+  else { xhr.open("GET", "/update?output="+element.id+"&state=0", true); }
+  xhr.send();
+}
+function clickButton(element) {
+  var xhr = new XMLHttpRequest();
+  var medium = element.getAttribute("data-medium") ;
+  var value =   element.getAttribute("data-value") ;
+  xhr.open("GET", "/update?output="+medium+"&state"+value, true);
+  xhr.send();
+}
+</script>
+</body>
+</html>
+)rawliteral";
+
+
+// Replaces placeholder with button section in your web page
+String processor(const String& var){
+  //Serial.println(var);
+  if(var == "BUTTONPLACEHOLDER"){
+    String buttons = R"rawliteral(
+      <table>  
+        <tr>    <th>Living</th>	<th>B1</th>    <th>B2</th>    <th>B3</th>	<th>B4</th>  </tr>  
+        <tr>		<td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=101111110011">Light </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=101111111100">Light </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=101111111011">Light </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=101111111000">Light </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=101111111110">Light </button></a>  </td>  </tr> 
+        <tr>		<td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111110110011">Fan off </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111110111100">Fan off </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111110111011">Fan off </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111110111000">Fan off </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111110111110">Fan off </button></a>  </td>  </tr> 
+        <tr>		<td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=011111110011">Fan low </button></a>  </td>
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=011111111100">Fan low </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=011111111011">Fan low </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=011111111000">Fan low </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=011111111110">Fan low </button></a>  </td>  </tr>  
+        <tr>		<td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111011110011">Fan med </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111011111100">Fan med </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111011111011">Fan med </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111011111000">Fan med </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111011111110">Fan med </button></a>  </td>  </tr>  
+        <tr>		<td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111101110011">Fan high </button></a>  </td>
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111101111100">Fan high </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111101111011">Fan high </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111101111000">Fan high </button></a>  </td>	
+          <td> <button  onclick="clickButton(this)" class="button" data-medium="RADIO" data-value="=111101111110">Fan high </button></a>  </td>  </tr>  
+        </table> 
+    )rawliteral";
+    return buttons;
+  }
+  return String();
+}
+
+
+String outputState(int output){
+  if(digitalRead(output)){
+    return "checked";
+  }
+  else {
+    return "";
+  }
+}
+
+
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+
+void setup(){
+  // Serial port for debugging purposes
   Serial.begin(115200);
   mySwitch_rx.enableReceive(5);  // Receiver on pin D1 GPIO 5
 
@@ -110,112 +136,57 @@ void setup() {
   // set protocol (default is 1, will work for most outlets)
   mySwitch_tx.setProtocol(11);
 
-  // Connect to the network
-  WiFi.begin(ssid, password);             
-  Serial.print("Connecting to ");
-  Serial.print(ssid); Serial.println(" ...");
-
-  int i = 0;
-  while (WiFi.status() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
+  pinMode(2, OUTPUT);
+  digitalWrite(2, LOW);
+  
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
-    Serial.print(++i); Serial.print(' ');
+    Serial.println("Connecting to WiFi..");
   }
 
-  Serial.println('\n');
-  Serial.println("Connection established!");  
-  Serial.print("IP address:\t");
-  Serial.println(WiFi.localIP());         // Send the IP address of the ESP8266 to the computer
+  // Print ESP Local IP Address
+  Serial.println(WiFi.localIP());
 
- // Start the server
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html, processor);
+  });
+
+  // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+  server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String inputMessage1;
+    String inputMessage2;
+    // GET input1 value on <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+    if (request->hasParam(PARAM_INPUT_1) && request->hasParam(PARAM_INPUT_2)) {
+      inputMessage1 = request->getParam(PARAM_INPUT_1)->value();
+      inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
+      
+      if (inputMessage1 == "RADIO"){
+        char charBuf[12 + 1];
+        inputMessage2.toCharArray(charBuf, 12 + 1);
+        mySwitch_tx.send(charBuf);
+      }
+      else if (inputMessage1 == "LED"){
+        digitalWrite(ledPin, inputMessage2.toInt());
+      }
+    }
+    else {
+      inputMessage1 = "No message sent";
+      inputMessage2 = "No message sent";
+    }
+    Serial.print("Output: ");
+    Serial.print(inputMessage1);
+    Serial.print("Value: ");
+    Serial.println(inputMessage2);
+    request->send(200, "text/plain", "OK");
+  });
+
+  // Start server
   server.begin();
-  Serial.println("Server started");
-
-// Set ledPin according to the request
-  digitalWrite(ledPin, value); 
-  
-  pinMode(ledPin, OUTPUT);
 }
 
 void loop() {
-  //print recieved 433 signals
-  if (mySwitch_rx.available()) {
-    output(mySwitch_rx.getReceivedValue(), mySwitch_rx.getReceivedBitlength(), mySwitch_rx.getReceivedDelay(), mySwitch_rx.getReceivedRawdata(),mySwitch_rx.getReceivedProtocol());
-    mySwitch_rx.resetAvailable();
-  }
- // Check if a client has connected, iof no client rest of code not executed
-  WiFiClient client = server.available();
-  if (!client) {
-    return;
-  }
- 
-  // Wait until the client sends some data
-  Serial.println("new client");
-  while(!client.available()){
-    delay(1);
-    Serial.println("client unavailable");
-  }
- 
-  // Read the first line of the request
-  String request = client.readStringUntil('\r');
-  Serial.println(request);
-  client.flush();
- 
-  // Match the request
-
-  if (request.indexOf("/LED=ON") != -1)  {
-    digitalWrite(ledPin, LOW);
-    value = HIGH;
-  }
-  if (request.indexOf("/LED=OFF") != -1)  {
-    digitalWrite(ledPin, HIGH);
-    value = LOW;
-  }
-
-  int radio_idx = request.indexOf("/RADIO=") ; 
-  if (radio_idx != -1 )  {
-    //string to transmit
-    //TODO add checks that string is valid 12 chars and each is 0 or 1
-    transmit = request.substring(radio_idx + 7 ,radio_idx + 7 + 12) ;
-    Serial.println(transmit);
-    //mySwitch cant take String convert to char array using a buffer to store
-    char charBuf[12 + 1];
-    transmit.toCharArray(charBuf, 12 + 1);
-    mySwitch_tx.send(charBuf);
-  }
- 
-
- 
-  // Return the response
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/html");
-  client.println(""); //  do not forget this one
-  client.println("<!DOCTYPE HTML>");
-  client.println("<html>");
-  client.println("<head>");
-  client.println(style);
-  client.println("</head><body>");
- 
-  client.print("Led is now: ");
- 
-  if(value == HIGH) {
-    client.print("Off");
-  } else {
-    client.print("On");
-  }
-  client.println("<br><br>");
-  client.println("Radio is: ");
-  client.println(transmit);
-
-  client.println("<br>");
-  client.println("<a href=\"/LED=ON\"\"><button class=\"button\">On </button></a>");
-  client.println("<a href=\"/LED=OFF\"\"><button class=\"button\">Off </button></a><br />");  
-  client.println("<br>");
-  client.println(table);
-  client.println("</body>");
-  client.println("</html>");
- 
-  delay(1);
-  Serial.println("Client disonnected");
-  Serial.println("");  
-  
+  //TODO print recieved 433 signals
 }
