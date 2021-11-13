@@ -178,7 +178,7 @@ void setup(){
     }
     Serial.print("Output: ");
     Serial.print(inputMessage1);
-    Serial.print("Value: ");
+    Serial.print(" Value: ");
     Serial.println(inputMessage2);
     request->send(200, "text/plain", "OK");
   });
@@ -188,5 +188,9 @@ void setup(){
 }
 
 void loop() {
-  //TODO print recieved 433 signals
+  //print recieved 433 signals
+  if (mySwitch_rx.available()) {
+    output(mySwitch_rx.getReceivedValue(), mySwitch_rx.getReceivedBitlength(), mySwitch_rx.getReceivedDelay(), mySwitch_rx.getReceivedRawdata(),mySwitch_rx.getReceivedProtocol());
+    mySwitch_rx.resetAvailable();
+  }
 }
